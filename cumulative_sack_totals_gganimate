@@ -1,0 +1,53 @@
+
+library(gganimate)
+
+#load data from 2009 to 2018 from NFLScrapR
+#create dataset containing Passer ID and Passer Name
+qb_name_id <- pbp_data %>%
+  filter(PlayType != "No Play" & !is.na(Passer)) %>%
+  group_by(Passer, Passer_ID) %>%
+  summarise(n()) %>%
+  select(Passer,Passer_ID) %>%
+  filter(Passer_ID != "None")
+
+#create dataset filtering for only plays resulting in a sack
+sack_data <- pbp_data %>%
+  filter(PlayType == "Sack" & is.na(PassOutcome)) %>%
+  group_by(Passer_ID, Season) %>%
+  summarise(sack_totals = n()) %>%
+  mutate(cumsum = cumsum(sack_totals))
+
+#merge two datasets on Passer ID to get Passer names in sack dataset
+sack_name <- merge(x = qb_name_id, y = sack_data, by = "Passer_ID", all = TRUE)
+
+#clean out bad and incorrect values
+sack_name2 <- sack_name %>%
+#  group_by(Passer_ID) %>%
+  filter(!is.na(cumsum) & Passer != "iver. Ryan" & Passer != "RSED. Ryan" & Passer != "Ale.Smith" & Passer != "C.Rachal")
+
+sack_name2 <- sack_name2 %>%
+  group_by(Season) %>%
+  mutate(order = order(order(Season, cumsum, decreasing = TRUE))) %>%
+  top_n(10, wt=cumsum) %>%
+  arrange(desc(cumsum)) 
+
+#plot data using ggplot2 and gganimate
+p <- ggplot(sack_name2, aes(order)) +
+  geom_tile(aes(y = cumsum/2, height = cumsum, width = 0.6, group = Passer, fill = Passer), alpha = 0.8) +
+  geom_text(aes(y = 0, label = paste(Passer, " ")), size = 4, vjust = 0.2, hjust = 0) +
+  geom_text(aes(y = cumsum, label = as.character(cumsum), hjust = 0)) +
+  coord_flip(clip = "off", expand = FALSE) +
+  scale_y_continuous() +
+  scale_x_reverse() +
+  guides(color = FALSE, fill = FALSE) +
+  labs(title= "Cumulative Sack Totals by QB \n 2009 - 2018",
+      subtitle = 'Year: {next_state}',
+     x = 'Quarterback',
+     y = 'Cumulative Sack Totals') +
+  theme(plot.title=element_text(size=20, color="black"))+
+  theme(plot.subtitle=element_text(size=18, vjust = 1, hjust=1, face="bold", color="black"))+  transition_states(Season) +
+  ease_aes('cubic-in-out')
+
+
+animate(p, nframes=100)
+anim_save("sack_totals.gif")
