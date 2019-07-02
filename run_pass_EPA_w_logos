@@ -1,0 +1,40 @@
+#load 2018 EPA data from NFLScrapR
+install.packages("devtools")
+devtools::install_github(repo = "maksimhorowitz/nflscrapR")
+
+library(jsonlite)
+library(tidyverse)
+library(nflscrapR)
+
+pbp_2018 <- season_play_by_play(2018)
+
+
+#Plot Run and Pass EPA for all teams using team logos
+
+league_epa_18_pass <- pbp_2018 %>%
+  filter(PlayType == "Pass" & posteam != "")%>%
+  group_by(posteam) %>%
+  summarise(Attempts = n(), Total_EPA = sum(EPA, na.rm = TRUE), pass_EPA_per_Att = Total_EPA/Attempts)
+
+league_epa_18_run <- pbp_2018 %>%
+  filter(PlayType == "Run" & posteam != "")%>%
+  group_by(posteam) %>%
+  summarise(Attempts = n(), Total_EPA = sum(EPA, na.rm = TRUE), run_EPA_per_Att = Total_EPA/Attempts)
+
+league_epa_18 <- merge(x = league_epa_18_pass, y = league_epa_18_run, by = "posteam", all = TRUE)
+
+url.logo <- getURL("https://raw.githubusercontent.com/statsbylopez/BlogPosts/master/nfl_teamlogos.csv")
+df.logos <- read.csv(text = url.logo)
+league_epa_18 <- league_epa_18 %>% 
+  left_join(df.logos, by = c("posteam" = "team_code"))
+
+ggplot(league_epa_18, aes(pass_EPA_per_Att, run_EPA_per_Att)) + 
+  geom_image(aes(image = url), size = 0.05) + 
+  xlab("Pass EPA per Attempt") + 
+  ylab("Run EPA per Attempt") + 
+  theme_minimal() + 
+  labs(title = "2018 Expected Points Added by Play Type") + 
+  geom_hline(aes(yintercept = 0), lty = 2, col = "red", alpha = 0.5)+ 
+  geom_vline(aes(xintercept = 0), lty = 2, col = "red", alpha = 0.5) + 
+  xlim(c(-0.2, 0.45)) + ylim(c(-0.25, 0.25))
+
