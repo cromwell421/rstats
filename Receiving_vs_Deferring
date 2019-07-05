@@ -1,0 +1,169 @@
+library(jsonlite)
+library(tidyverse)
+library(nflscrapR)
+library(ggplot2)
+library(ggrepel)
+
+
+pbp_2009 <- season_play_by_play(2009)
+pbp_2010 <- season_play_by_play(2010)
+pbp_2011 <- season_play_by_play(2011)
+pbp_2012 <- season_play_by_play(2012)
+pbp_2013 <- season_play_by_play(2013)
+pbp_2014 <- season_play_by_play(2014)
+pbp_2015 <- season_play_by_play(2015)
+pbp_2016 <- season_play_by_play(2016)
+pbp_2017 <- season_play_by_play(2017)
+pbp_2018 <- season_play_by_play(2018)
+
+pbp_data <- bind_rows(pbp_2009, pbp_2010, pbp_2011, pbp_2012, pbp_2013, pbp_2014, 
+                      pbp_2015, pbp_2016, pbp_2017, pbp_2018)
+
+#EPA for first and last drive of the game
+first_drive_EPA <- pbp_data %>%
+  filter(posteam != "") %>%
+  mutate(half = ifelse(qtr == 1 | qtr == 2, "Half_1","Half_2")) %>%
+  group_by(GameID, half) %>%
+  mutate(drive_num = ifelse(Drive == min(Drive),"First Drive",
+                            ifelse(Drive == max(Drive),"Last Drive","Middle Drive"))) %>%
+  ungroup() %>%
+  
+  group_by(GameID) %>%
+  mutate(rec_team = ifelse(posteam == first(posteam),"Receiving Team", "Defer Team")) %>%
+  ungroup() %>%
+  
+  group_by(GameID, rec_team) %>%
+  mutate(num_drives = n_distinct(Drive)) %>%
+  ungroup()
+
+#NUmber of drives by receiving and deferring teams
+avg_num_of_drives <-  first_drive_EPA %>%
+  group_by(rec_team) %>%
+  summarise(avg_drives_per_team = mean(num_drives, na.rm = TRUE))
+  
+#EPA of drives first and last drives
+EPA_by_Drive <- first_drive_EPA %>%
+  group_by(half, drive_num, rec_team) %>%
+  summarise(plays_per_drive = n(), Total_EPA = sum(EPA, na.rm = TRUE), EPA_per_Att = Total_EPA/plays_per_drive) %>%
+  filter(drive_num == "Last Drive" & half == "Half_1") %>%
+  ungroup() %>%
+  select(half, drive_num, rec_team, EPA_per_Att)
+
+
+#EPA by team  
+team_EPA <- first_drive_EPA %>%
+  filter(Season == 2018 | Season == 2017 | Season == 2016) %>%
+  mutate(posteam=replace(posteam, posteam=="SD", "LAC")) %>%
+  mutate(posteam=replace(posteam, posteam=="JAC", "JAX")) %>%
+  group_by(half, drive_num, posteam) %>%
+  summarise(n = n(), Total_EPA = sum(EPA, na.rm = TRUE), EPA_per_Att = Total_EPA/n) %>%
+  filter(drive_num == "First Drive") %>%
+  select(drive_num, half, posteam, EPA_per_Att) %>%
+  spread(key = half, value = EPA_per_Att)
+
+#EPA on final drive of the half by rec/defer team
+Rec_team_finish_half_EPA <- first_drive_EPA %>%
+  filter(Season == 2018 | Season == 2017 | Season == 2016) %>%
+  filter(half == "Half_1" & drive_num == "Last Drive") %>%
+  group_by(rec_team) %>%
+  summarise(n = n(), Total_EPA = sum(EPA, na.rm = TRUE), EPA_per_Att = Total_EPA/n)
+ 
+#Last Drive of first half and first drive of second half
+team_EPA_final_half <- first_drive_EPA %>%
+  filter(Season == 2018 | Season == 2017 | Season == 2016) %>%
+  filter(rec_team == "Defer Team") %>%
+  mutate(posteam=replace(posteam, posteam=="SD", "LAC")) %>%
+  mutate(posteam=replace(posteam, posteam=="JAC", "JAX")) %>%
+  group_by(half, drive_num, posteam) %>%
+  summarise(n = n(), Total_EPA = sum(EPA, na.rm = TRUE), EPA_per_Att = Total_EPA/n) %>%
+  filter(drive_num == "First Drive" | drive_num == "Last Drive") %>%
+  unite(half_drive, half,drive_num) %>%
+  select(half_drive, posteam, EPA_per_Att) %>%
+  filter(half_drive != "Half_1_First Drive" & half_drive != "Half_2_Last Drive") %>%
+  mutate(half_drive=replace(half_drive, half_drive=="Half_1_Last Drive", "Half_1_Last_Drive")) %>%
+  mutate(half_drive=replace(half_drive, half_drive=="Half_2_First Drive", "Half_2_First_Drive")) %>%
+    spread(key = half_drive, value = EPA_per_Att)
+
+
+ #ATL breakdown
+team_EPA_ATL <- first_drive_EPA %>%
+  filter(Season == 2018 | Season == 2017 | Season == 2016) %>%
+  filter(posteam == "ATL") %>%
+  group_by(Season, half, drive_num, posteam) %>%
+  summarise(n = n(), Total_EPA = sum(EPA, na.rm = TRUE), EPA_per_Att = Total_EPA/n) %>%
+  filter(drive_num == "First Drive") %>%
+  select(Season, drive_num, half, posteam, EPA_per_Att) %>%
+  spread(key = half, value = EPA_per_Att)
+
+
+#density for 1st and 2half drives
+ggplot(EPA_by_Drive, aes(x = EPA_per_Att, group = half, colour = half)) + 
+  geom_density() + 
+  xlab("EPA per Play") + 
+  #  ylab("EPA per Drive") + 
+  ggtitle("Receiving and Deferring EPA") + 
+  labs(title = "Receiving and Defering EPA",
+       subtitle = "First Drive of Each Half (2009 - 2018)",
+       caption = "Source: NFLScrapR") +
+  theme_minimal() +
+ # scale_x_continuous(limits = c(-.4, .4)) +
+  theme(plot.title = element_text(hjust = 0.5, size = 16),plot.subtitle = element_text(hjust = 0.5, size = 12),  axis.title = element_text(size = 12), axis.text = element_text(size = 12))
+
+
+#EPA for first and second half by team
+ggplot(team_EPA, aes(x = Half_1, y = Half_2, group = posteam)) + 
+  geom_point() + 
+  xlab("EPA per Play \n 'Receive' Drive (1st Half)") + 
+  ylab("EPA per Play \n 'Defer' Drive (2nd Half)") + 
+  theme_minimal() +
+  ggtitle("Receiving vs Defering") + 
+  labs(title = "Receiving vs Defering",
+       subtitle = "Opening Half Drive EPA by Team (2016 - 2018)",
+       caption = "Source: NFLScrapR") +
+  geom_smooth(method = 'lm') +
+  geom_text_repel(aes(label = ifelse(Half_1>0.2 | Half_1 < -0.1 | Half_2 > .15 | Half_2 < -.09, as.character(posteam),""))) +
+  scale_x_continuous(limits = c(-.45, .45)) +
+  scale_y_continuous(limits = c(-.45, .45)) +
+  geom_hline(aes(yintercept = 0), lty = 2, col = "red", alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty = 2, col = "red", alpha = 0.5) +
+  theme(plot.title = element_text(hjust = 0.5, size = 16), plot.subtitle = element_text(hjust = 0.5, size = 12), axis.title = element_text(size = 8), axis.text = element_text(size = 8))
+
+
+#ATL Plot
+ggplot(team_EPA_ATL, aes(x = Half_1, y = Half_2, group = Season)) + 
+  geom_point() + 
+  xlab("EPA per Play \n 'Receive' Drive (1st Half)") + 
+  ylab("EPA per Play \n 'Defer' Drive (2nd Half)") + 
+  theme_minimal() +
+  ggtitle("Receiving vs Defering") + 
+  labs(title = "Receiving vs Defering",
+       subtitle = "Falcons Opening Half Drives EPA (2016 - 2018)",
+       caption = "Source: NFLScrapR") +
+  geom_smooth(method = 'lm') +
+  geom_text_repel(aes(label = ifelse(Half_1>0.2 | Half_1 < -0.1 | Half_2 > .15 | Half_2 < -.09, as.character(Season),""))) +
+  scale_x_continuous(limits = c(-.45, .45)) +
+  scale_y_continuous(limits = c(-.45, .45)) +
+  geom_hline(aes(yintercept = 0), lty = 2, col = "red", alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty = 2, col = "red", alpha = 0.5) +
+  theme(plot.title = element_text(hjust = 0.5, size = 16), plot.subtitle = element_text(hjust = 0.5, size = 12), axis.title = element_text(size = 8), axis.text = element_text(size = 8))
+
+
+
+#Final drive first half and first drive second half plot
+ggplot(team_EPA_final_half, aes(x = Half_1_Last_Drive, y = Half_2_First_Drive, group = posteam)) + 
+  geom_point() + 
+  xlab("EPA per Play \n Last Drive of 1st Half") + 
+  ylab("EPA per Play \n First Drive of 2nd Half") + 
+  theme_minimal() +
+  ggtitle("Receiving vs Defering") + 
+  labs(title = "Receiving vs Defering",
+       subtitle = "Last Drive of First Half vs First Drive of Second Half \n EPA by Team (2016 - 2018)",
+       caption = "Source: NFLScrapR") +
+  geom_smooth(method = 'lm') +
+  geom_text_repel(aes(label = ifelse(Half_1_Last_Drive>0.1 | Half_1_Last_Drive < -0.2 | Half_2_First_Drive > .2 | Half_2_First_Drive < -.065, as.character(posteam),""))) +
+  scale_x_continuous(limits = c(-.45, .45)) +
+  scale_y_continuous(limits = c(-.45, .45)) +
+  geom_hline(aes(yintercept = 0), lty = 2, col = "red", alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty = 2, col = "red", alpha = 0.5) +
+  theme(plot.title = element_text(hjust = 0.5, size = 16), plot.subtitle = element_text(hjust = 0.5, size = 12), axis.title = element_text(size = 8), axis.text = element_text(size = 8))
+
