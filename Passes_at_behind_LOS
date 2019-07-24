@@ -3,19 +3,22 @@ pbp_2018 <- season_play_by_play(2018)
 
 #Filter plays to only passes that are at or behind the Line of Scrimmage
 pass_length <- pbp_2018 %>%
-  filter(PlayType == "Pass" & !is.na(Passer) & AirYards <1) %>%
+  filter(PlayType == "Pass" | PlayType == "Sack") %>%
+  filter(!is.na(Passer) & AirYards <=0) %>%
   group_by(Passer) %>%
-  summarise(Attempts = n(), total_yds = sum(Yards.Gained), avg_yds_play = mean(Yards.Gained), Total_EPA = sum(EPA, na.rm = TRUE), EPA_per_Att = mean(EPA)) %>%
+  summarise(Attempts = n(), total_yds = sum(Yards.Gained), avg_yds_play = mean(Yards.Gained), Total_EPA = sum(EPA, na.rm = TRUE), EPA_per_Att = mean(EPA, na.rm = TRUE)) %>%
   filter(Attempts > 50) 
 
 #Plot and label the QBs for highest and lowest EPA per Attempt
 ggplot(pass_length, aes(y = Total_EPA, x = EPA_per_Att, label = Passer)) + 
-    geom_point() + 
-    geom_text_repel(aes(label = ifelse(EPA_per_Att>0.15 | EPA_per_Att < -0.25,as.character(Passer),""))) +
-    xlab("Average EPA") + 
-    ylab("Total EPA") + 
-    ggtitle("Completed Passes At or Behind LOS by QB - 2018") + 
-    geom_hline(aes(yintercept = 0), lty = 2, col = "red", alpha = 0.5) + 
-    geom_vline(aes(xintercept = 0), lty = 2, col = "red", alpha = 0.5) +
-    theme(plot.title = element_text(hjust = 0.5, size = 16), axis.title = element_text(size = 16), axis.text = element_text(size = 16))
+  geom_point() + 
+  geom_text_repel(aes(label = ifelse(EPA_per_Att>0.1,as.character(Passer),""))) +
+  xlab("Average EPA") + 
+  ylab("Total EPA") + 
+  geom_smooth(method = "lm", se = FALSE, linetype="dashed", color = "red", size = 0.25) +
+  theme_minimal() +
+  ggtitle("EPA for Passes At or Behind LOS by QB - 2018") + 
+  geom_hline(aes(yintercept = 0), lty = 2, col = "black", alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty = 2, col = "black", alpha = 0.5) +
+  theme(plot.title = element_text(hjust = 0.5, size = 16), axis.title = element_text(size = 16), axis.text = element_text(size = 16))
 
